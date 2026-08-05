@@ -7,6 +7,7 @@ sin perder el trabajo guardado.
 ## Qué incluye
 
 - **Ubuntu 24.04 LTS** (Noble Numbat)
+- **Escritorio GNOME** accesible desde el navegador en `http://localhost:6080/vnc.html`
 - **systemd real** — `systemctl`, `journalctl`, `cron` y `rsyslog` funcionan como en una VM
 - Usuario no-root **`nico`** con `sudo`, para practicar permisos correctamente
 - Páginas de manual operativas (`man`, `apropos`, `whatis`), en español
@@ -24,23 +25,44 @@ sin perder el trabajo guardado.
 git clone https://github.com/NicolasAndresCL/ultimate-linux-lab.git
 cd ultimate-linux-lab
 docker compose up -d --build
+```
+
+### Escritorio gráfico
+
+Abre **http://localhost:6080/vnc.html** en el navegador y pulsa *Connect*.
+Tarda unos 40 segundos en cargar GNOME la primera vez.
+
+### Terminal
+
+```bash
 docker exec -it -u nico ubuntu-lab bash
 ```
 
-**Credenciales** — usuario `nico`, contraseña `linux`. `root` usa la misma contraseña.
+**Credenciales** — usuario `nico`, contraseña `linux`, tanto en el escritorio como en la
+terminal y en VNC. `root` usa la misma.
 
-Para salir del contenedor: `exit`. Para apagarlo: `docker compose stop`.
+Para salir de la terminal: `exit`. Para apagar el lab: `docker compose stop`.
 
 ## Estructura
 
 ```
 ultimate-linux/
-├── Dockerfile        # imagen: Ubuntu 24.04 + systemd + toolkit + usuario nico
-├── compose.yaml      # servicio ubuntu-lab: privileged, cgroups, volúmenes
+├── Dockerfile        # imagen: Ubuntu 24.04 + systemd + GNOME + toolkit
+├── compose.yaml      # servicio ubuntu-lab: privileged, cgroups, puertos, volúmenes
+├── desktop/          # configuración del escritorio (VNC, noVNC, sesión GNOME)
 ├── workspace/        # ← tus scripts y ejercicios, editables desde VS Code
 ├── pasos.md          # chuleta completa de comandos Docker
 └── memory.md         # bitácora de hitos (no versionada)
 ```
+
+## Puertos
+
+| Puerto | Servicio |
+|---|---|
+| `6080` | noVNC — escritorio en el navegador |
+| `5901` | VNC nativo — para clientes como TigerVNC Viewer o RealVNC |
+
+Ambos se publican **solo en `127.0.0.1`**: el escritorio no queda expuesto a tu red local.
 
 ## Persistencia
 

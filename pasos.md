@@ -9,10 +9,14 @@ Todos se ejecutan desde `c:\dev\learning\hola_mundo\ultimate-linux` (PowerShell 
 
 ```bash
 docker compose up -d --build          # construye la imagen y levanta el lab
-docker exec -it -u nico ubuntu-lab bash   # entras como usuario normal
 ```
 
-Dentro verás el prompt `nico@ubuntu-lab:~$`. Contraseña de `nico` y de `root`: **`linux`**.
+**Escritorio gráfico** → abre <http://localhost:6080/vnc.html> y pulsa *Connect*.
+GNOME tarda ~40 segundos en cargar tras el arranque.
+
+**Terminal** → `docker exec -it -u nico ubuntu-lab bash`
+
+Contraseña de `nico` y de `root`: **`linux`** (la misma para el escritorio, VNC y `sudo`).
 
 ---
 
@@ -51,6 +55,47 @@ docker exec -u nico ubuntu-lab ls -la /etc
 ```
 
 Para salir: `exit` o `Ctrl+D` (el contenedor **sigue corriendo**).
+
+---
+
+## 2 bis. El escritorio GNOME
+
+El curso se imparte sobre Ubuntu Desktop, así que el lab levanta el mismo escritorio. La
+cadena es: **GNOME → servidor VNC (`:1`, puerto 5901) → websockify/noVNC (puerto 6080)**.
+
+| Acceso | Cómo |
+|---|---|
+| Navegador (recomendado) | <http://localhost:6080/vnc.html> → *Connect* → contraseña `linux` |
+| Cliente VNC nativo | Conecta a `localhost:5901`, contraseña `linux` |
+
+### Controlarlo con systemctl
+
+Son servicios de systemd normales, así que se manejan como cualquier otro del curso:
+
+```bash
+sudo systemctl status vncserver     # estado del escritorio
+sudo systemctl restart vncserver    # reiniciar la sesión gráfica (si se cuelga)
+sudo systemctl stop vncserver       # apagar el escritorio y liberar RAM
+sudo systemctl status novnc         # el puente hacia el navegador
+journalctl -u vncserver -f          # ver los logs en vivo
+```
+
+### Cambiar la resolución
+
+Edita `desktop/vncserver.service`, la línea `-geometry 1440x900`, y reconstruye con
+`docker compose up -d --build`.
+
+### Si el escritorio no carga
+
+```bash
+docker exec ubuntu-lab systemctl is-active vncserver   # debe decir `active`
+docker exec ubuntu-lab journalctl -u vncserver -n 40 --no-pager
+```
+
+- **`activating` y nunca llega a `active`**: GNOME está arrancando, dale ~40 segundos.
+- **Pantalla gris o negra**: `sudo systemctl restart vncserver` desde la terminal.
+- **`Connection refused` en el navegador**: el contenedor no está levantado
+  (`docker compose ps`).
 
 ---
 
