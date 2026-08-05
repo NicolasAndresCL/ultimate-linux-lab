@@ -1,0 +1,27 @@
+#!/bin/bash
+# Prepara ~/.vnc en el home del usuario.
+#
+# Por qué existe: /home es un volumen de Docker ya inicializado, así que cualquier
+# archivo que la imagen coloque en /home/nico queda OCULTO tras el montaje. La
+# plantilla se guarda en /opt/lab-skel (que sí vive en la imagen) y se copia al
+# home en cada arranque si falta.
+set -euo pipefail
+
+SKEL=/opt/lab-skel/.vnc
+DEST="$HOME/.vnc"
+
+mkdir -p "$DEST"
+
+# El xstartup se sobrescribe siempre: es configuración del lab, no del usuario.
+cp -f "$SKEL/xstartup" "$DEST/xstartup"
+chmod 755 "$DEST/xstartup"
+
+# La contraseña solo se crea si no existe, para no pisar la que el usuario haya
+# cambiado con `vncpasswd`.
+if [ ! -f "$DEST/passwd" ]; then
+    cp -f "$SKEL/passwd" "$DEST/passwd"
+    chmod 600 "$DEST/passwd"
+fi
+
+# Restos de un arranque anterior impiden que el display :1 se levante.
+rm -f "$DEST"/*.pid "$DEST"/*.log /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true

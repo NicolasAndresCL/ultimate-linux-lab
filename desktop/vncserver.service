@@ -1,0 +1,35 @@
+[Unit]
+Description=Servidor TigerVNC con escritorio GNOME para el usuario nico
+After=syslog.target network.target dbus.service
+
+[Service]
+Type=simple
+User=nico
+Group=nico
+WorkingDirectory=/home/nico
+Environment=HOME=/home/nico
+Environment=USER=nico
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+
+# Sin un login PAM real, nadie crea /run/user/1000 y GNOME falla al arrancar
+# (dconf y D-Bus lo necesitan). systemd lo crea aquí con el dueño correcto.
+RuntimeDirectory=user/1000
+RuntimeDirectoryMode=0700
+
+# -fg mantiene el proceso en primer plano, que es lo que systemd espera con Type=simple.
+# -localhost no permite que websockify (noVNC) se conecte al puerto 5901.
+ExecStartPre=/usr/local/bin/prepare-vnc-home
+ExecStartPre=-/usr/bin/vncserver -kill :1
+ExecStart=/usr/bin/vncserver :1 \
+    -fg \
+    -geometry 1440x900 \
+    -depth 24 \
+    -localhost no \
+    -xstartup /home/nico/.vnc/xstartup
+ExecStop=/usr/bin/vncserver -kill :1
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

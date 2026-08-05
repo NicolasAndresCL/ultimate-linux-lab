@@ -90,14 +90,58 @@ RUN systemctl mask \
     sys-kernel-config.mount \
     systemd-udevd.service \
     systemd-udev-trigger.service \
-    systemd-logind.service \
     getty.target \
     console-getty.service \
     systemd-networkd-wait-online.service \
  && rm -f /lib/systemd/system/multi-user.target.wants/getty.target
 
-# Habilitar servicios útiles para las clases de systemd/cron
-RUN systemctl enable cron rsyslog
+# -----------------------------------------------------------------------------
+# ESCRITORIO GRÁFICO — GNOME de Ubuntu, accesible desde el navegador
+#
+# El curso se imparte sobre Ubuntu Desktop, así que el lab replica el mismo
+# entorno gráfico. La cadena es:
+#     GNOME  →  servidor TigerVNC (:1 / puerto 5901)  →  websockify/noVNC (6080)
+# y desde Windows se abre en http://localhost:6080
+#
+# Se instala `ubuntu-desktop-minimal` SIN recomendados para evitar arrastrar
+# gdm3, snapd e impresoras, que en un contenedor sobran y rompen el arranque.
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ubuntu-desktop-minimal \
+    gnome-session gnome-shell gnome-terminal gnome-control-center \
+    nautilus gnome-text-editor gnome-system-monitor gnome-disk-utility \
+    yaru-theme-gtk yaru-theme-icon yaru-theme-sound \
+    fonts-ubuntu xfonts-base \
+    tigervnc-standalone-server tigervnc-common tigervnc-tools \
+    novnc websockify \
+    dbus-x11 x11-xserver-utils xdg-utils \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
+# GDM (el gestor de login gráfico) sobra: la sesión la arranca el servidor VNC.
+# Si quedara activo, competiría por el display y el escritorio no cargaría.
+RUN systemctl disable gdm3.service 2>/dev/null || true; \
+    systemctl mask gdm3.service 2>/dev/null || true; \
+    systemctl set-default multi-user.target
+
+# Plantilla de configuración VNC.
+# Va en /opt/lab-skel y NO en /home/nico: /home es un volumen de Docker, y todo
+# lo que la imagen escriba ahí queda oculto al montarlo. El script
+# prepare-vnc-home la copia al home real en cada arranque.
+COPY desktop/xstartup          /opt/lab-skel/.vnc/xstartup
+COPY desktop/prepare-vnc-home  /usr/local/bin/prepare-vnc-home
+RUN echo "linux" | vncpasswd -f > /opt/lab-skel/.vnc/passwd \
+ && chmod 600 /opt/lab-skel/.vnc/passwd \
+ && chmod 755 /opt/lab-skel/.vnc/xstartup /usr/local/bin/prepare-vnc-home \
+ && chown -R nico:nico /opt/lab-skel
+
+# Servicios systemd del escritorio: así se gestionan con systemctl, igual que
+# cualquier otro servicio del curso.
+COPY desktop/vncserver.service /etc/systemd/system/vncserver.service
+COPY desktop/novnc.service     /etc/systemd/system/novnc.service
+
+# Habilitar servicios útiles para las clases de systemd/cron, más el escritorio
+RUN systemctl enable cron rsyslog vncserver novnc
 
 # Mensaje de bienvenida del lab
 RUN printf '%s\n' \

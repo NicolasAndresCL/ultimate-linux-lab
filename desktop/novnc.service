@@ -1,0 +1,14 @@
+[Unit]
+Description=noVNC — puente del escritorio VNC al navegador web
+After=vncserver.service
+Requires=vncserver.service
+
+[Service]
+Type=simple
+# Sirve el cliente web de noVNC en el puerto 6080 y lo conecta al VNC del 5901.
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc/ 6080 localhost:5901
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

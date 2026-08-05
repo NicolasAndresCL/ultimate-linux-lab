@@ -17,6 +17,20 @@ services:
       - /run/lock
       - /tmp
 
+    ports:
+      # Se publican solo en 127.0.0.1: el escritorio queda accesible desde este
+      # equipo y NO desde el resto de la red local.
+      # Escritorio GNOME en el navegador: http://localhost:6080/vnc.html
+      - "127.0.0.1:6080:6080"
+      # VNC nativo, por si prefieres un cliente como TigerVNC Viewer o RealVNC
+      - "127.0.0.1:5901:5901"
+      # Descomenta cuando llegues a los módulos de servicios web del curso:
+      # - "127.0.0.1:8080:80"
+
+    # GNOME Shell necesita más memoria compartida que los 64 MB por defecto de
+    # Docker, o el escritorio se queda en negro al cargar.
+    shm_size: "1gb"
+
     volumes:
       # cgroups del host (si systemd no arranca, ver troubleshooting en pasos.md)
       - /sys/fs/cgroup:/sys/fs/cgroup:rw

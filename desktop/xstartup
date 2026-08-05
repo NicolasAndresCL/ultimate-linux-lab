@@ -1,0 +1,23 @@
+#!/bin/sh
+# Sesión que arranca dentro del servidor VNC: escritorio GNOME de Ubuntu.
+
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+
+export XDG_SESSION_TYPE=x11
+export XDG_CURRENT_DESKTOP=ubuntu:GNOME
+export XDG_SESSION_DESKTOP=ubuntu
+export GNOME_SHELL_SESSION_MODE=ubuntu
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+
+# Sin GPU en el contenedor: GNOME Shell renderiza por software (llvmpipe).
+export LIBGL_ALWAYS_SOFTWARE=1
+export GALLIUM_DRIVER=llvmpipe
+# GNOME Shell se cuelga en VNC si intenta usar aceleración por hardware.
+export MUTTER_DEBUG_DUMMY_MODE_SPECS=1440x900
+
+[ -r "$HOME/.Xresources" ] && xrdb "$HOME/.Xresources"
+
+exec dbus-launch --exit-with-session gnome-session --session=ubuntu
