@@ -59,4 +59,7 @@ ultimate-linux/
 
 - **[pasos.md](pasos.md)** — todos los comandos: ciclo de vida, backups, snapshots con
   `docker commit`, diagnóstico y troubleshooting.
-- **[memory.md](memory.md)** — bitácora de avance y decisiones técnicas.
+
+## Licencia
+
+[MIT](LICENSE) © Nicolás Andrés Cano Leal
