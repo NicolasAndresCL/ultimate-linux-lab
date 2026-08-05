@@ -107,6 +107,7 @@ Esto es lo más importante que hay que entender, y está **verificado**:
 |---|:---:|:---:|:---:|
 | `./workspace` (bind mount) | ✅ | ✅ | ✅ |
 | `/home` (volumen `ultimate-linux-home`) | ✅ | ✅ | ❌ |
+| Ajustes de GNOME y `~/.vnc` (viven en `/home`) | ✅ | ✅ | ❌ |
 | `/etc/passwd`, usuarios creados con `useradd` | ✅ | ❌ | ❌ |
 | Paquetes instalados con `apt install` | ✅ | ❌ | ❌ |
 | Cambios en `/etc`, `/var`, `/opt` | ✅ | ❌ | ❌ |
@@ -175,9 +176,16 @@ y comenta la sección `build:`, o lánzalo suelto:
 ```bash
 docker run -d --name lab-restaurado --privileged --cgroup host \
   --tmpfs /run --tmpfs /run/lock --tmpfs /tmp \
+  --shm-size 1gb \
+  -p 127.0.0.1:6081:6080 -p 127.0.0.1:5902:5901 \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
   ultimate-linux-lab:antes-de-permisos
 ```
+
+> Los puertos van desplazados (`6081`, `5902`) para no chocar con el lab principal si
+> ambos están levantados. El escritorio del snapshot estaría en
+> <http://localhost:6081/vnc.html>.
+> **`--shm-size 1gb` no es opcional**: sin él, GNOME arranca con la pantalla en negro.
 
 Cada snapshot ocupa solo la diferencia respecto de la imagen base — cuestan casi nada,
 al contrario que los discos de una VM.
@@ -193,6 +201,8 @@ docker top ubuntu-lab               # procesos vistos desde el host
 docker inspect ubuntu-lab           # configuración completa en JSON
 docker exec ubuntu-lab systemctl is-system-running   # salud de systemd
 docker exec ubuntu-lab systemctl --failed            # servicios caídos
+docker exec ubuntu-lab systemctl is-active vncserver # ¿el escritorio está arriba?
+docker port ubuntu-lab                               # puertos publicados
 ```
 
 ---
@@ -213,7 +223,10 @@ docker compose down -v
 docker compose up -d --build
 ```
 
-Tarda segundos. Ese es el motivo de haber cambiado la VM por Docker.
+Recrear el contenedor tarda **segundos** si la imagen ya está construida. Si además
+cambiaste el `Dockerfile`, la reconstrucción con GNOME lleva unos **10 minutos** (Docker
+reutiliza las capas que no cambiaron). Aun así, frente a reinstalar una VM corrupta, no hay
+comparación: ese es el motivo de haber cambiado la máquina virtual por Docker.
 
 ---
 
@@ -232,7 +245,12 @@ crontab -e                # tareas programadas
 htop / ps aux / top       # procesos
 ip a / ping / ss -tuln    # red
 useradd / groupadd / chmod / chown   # usuarios y permisos
+systemctl status vncserver           # el escritorio GNOME, como servicio
 ```
+
+Y en el **escritorio** (<http://localhost:6080/vnc.html>): Terminal de GNOME, Archivos
+(Nautilus), Configuración, Monitor del sistema y Discos — las mismas aplicaciones que usa
+el instructor en su máquina virtual.
 
 ---
 
@@ -254,6 +272,9 @@ una actualización de Docker Desktop deja de hacerlo, prueba **en este orden** e
    ```
 3. Como último recurso, prescindir de systemd: cambiar el `CMD` del Dockerfile a
    `CMD ["/bin/bash"]` y usar `service cron start` en vez de `systemctl`.
+   ⚠️ Esto **te deja sin escritorio gráfico**: `vncserver` y `novnc` son units de systemd.
+   Habría que arrancarlos a mano con `vncserver :1` y `websockify --web=/usr/share/novnc/
+   6080 localhost:5901`.
 
 Después de cualquier cambio: `docker compose up -d --build`.
 

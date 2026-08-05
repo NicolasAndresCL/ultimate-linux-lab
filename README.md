@@ -1,8 +1,8 @@
 # Laboratorio Ultimate Linux — Ubuntu 24.04 con Docker
 
 Entorno Linux **desechable y reproducible** para seguir el curso *Ultimate Linux* de
-Hola Mundo. Sustituye a una máquina virtual: se rompe, se destruye y se recrea en segundos
-sin perder el trabajo guardado.
+Hola Mundo, con **escritorio GNOME en el navegador**. Sustituye a una máquina virtual: se
+rompe, se destruye y se recrea en segundos sin perder el trabajo guardado.
 
 ## Qué incluye
 
@@ -18,6 +18,7 @@ sin perder el trabajo guardado.
 
 - Docker Desktop (probado con Docker 29.3.1 y Compose v5.1.1)
 - Unidad `C:` compartida en *Settings → Resources → File sharing*
+- **4 GB de RAM** asignados a Docker como mínimo (GNOME es exigente) y **~3 GB de disco**
 
 ## Arranque rápido
 
@@ -26,6 +27,9 @@ git clone https://github.com/NicolasAndresCL/ultimate-linux-lab.git
 cd ultimate-linux-lab
 docker compose up -d --build
 ```
+
+> La primera construcción tarda **10-15 minutos**: descarga el escritorio GNOME completo.
+> Las siguientes son casi instantáneas gracias a la caché de capas de Docker.
 
 ### Escritorio gráfico
 
