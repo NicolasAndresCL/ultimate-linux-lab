@@ -1,0 +1,18 @@
+# Normalizar finales de línea: el repositorio siempre almacena LF.
+* text=auto eol=lf
+
+# Archivos que se ejecutan dentro de Linux: LF obligatorio.
+# Con CRLF, los shebangs y las continuaciones de línea del Dockerfile fallan.
+Dockerfile      text eol=lf
+*.sh            text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+.dockerignore   text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# Binarios: sin conversión.
+*.png binary
+*.jpg binary
+*.gz  binary
+*.zip binary
