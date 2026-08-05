@@ -21,6 +21,8 @@ sin perder el trabajo guardado.
 ## Arranque rápido
 
 ```bash
+git clone https://github.com/NicolasAndresCL/ultimate-linux-lab.git
+cd ultimate-linux-lab
 docker compose up -d --build
 docker exec -it -u nico ubuntu-lab bash
 ```
