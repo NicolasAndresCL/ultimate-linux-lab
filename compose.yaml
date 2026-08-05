@@ -1,0 +1,34 @@
+services:
+  ubuntu-lab:
+    build:
+      context: .
+      args:
+        USERNAME: nico
+        PASSWORD: linux
+    image: ultimate-linux-lab:24.04
+    container_name: ubuntu-lab
+    hostname: ubuntu-lab
+
+    # --- Requisitos de systemd dentro de Docker ---
+    privileged: true          # systemd necesita capacidades ampliadas
+    cgroup: host              # comparte el árbol de cgroups del host (cgroup v2)
+    tmpfs:                    # systemd exige estos directorios escribibles en RAM
+      - /run
+      - /run/lock
+      - /tmp
+
+    volumes:
+      # cgroups del host (si systemd no arranca, ver troubleshooting en pasos.md)
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      # /home persistente: usuarios, .bashrc, historial. Sobrevive a `docker rm`.
+      - lab-home:/home
+      # Carpeta editable desde Windows / VS Code.
+      - ./workspace:/home/nico/workspace
+
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+volumes:
+  lab-home:
+    name: ultimate-linux-home

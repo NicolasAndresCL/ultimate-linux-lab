@@ -1,0 +1,117 @@
+# =============================================================================
+#  Laboratorio Ubuntu 24.04 LTS con systemd — curso "Ultimate Linux" (Hola Mundo)
+#  Reemplaza a la máquina virtual: desechable, reproducible y arranca en segundos.
+# =============================================================================
+FROM ubuntu:24.04
+
+# `container=docker` le indica a systemd que corre dentro de un contenedor
+# y debe saltarse las tareas propias de hardware real.
+ENV container=docker
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=America/Santiago
+
+# -----------------------------------------------------------------------------
+# Restaurar las páginas de manual.
+# La imagen oficial de Ubuntu viene "minimizada": /etc/dpkg/dpkg.cfg.d/excludes
+# borra TODAS las manpages, así que `man ls` no funciona. En un curso de Linux
+# eso es inaceptable, de modo que se elimina la exclusión ANTES de instalar nada
+# (así los paquetes siguientes ya traen su documentación).
+# -----------------------------------------------------------------------------
+RUN rm -f /etc/dpkg/dpkg.cfg.d/excludes
+
+# -----------------------------------------------------------------------------
+# Paquetes: systemd + todo el toolkit que se usa a lo largo del curso.
+# Una sola capa para no inflar la imagen.
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # --- systemd y su bus de mensajes ---
+    systemd systemd-sysv dbus dbus-user-session \
+    # --- básicos del curso ---
+    sudo nano vim less man-db manpages tree htop procps psmisc \
+    # --- red ---
+    iproute2 iputils-ping net-tools curl wget dnsutils traceroute \
+    # --- utilidades ---
+    git cron rsyslog bash-completion unzip zip tzdata locales \
+    file lsof rsync ca-certificates jq \
+    # --- páginas de manual ---
+    manpages-es \
+ # Los paquetes base (ls, cd, chmod, grep...) YA estaban instalados cuando las
+ # manpages seguían excluidas, así que hay que reinstalarlos para recuperarlas.
+ && apt-get install -y --reinstall --no-install-recommends \
+    coreutils bash dash findutils grep sed gawk diffutils tar gzip \
+    util-linux procps passwd login adduser mount hostname debianutils \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
+# La imagen minimizada sustituye /usr/bin/man por un stub que solo imprime un
+# aviso, y esconde el binario real en /usr/bin/man.REAL. Se restaura el original
+# y se reconstruye el índice para que `man`, `whatis` y `apropos` funcionen.
+RUN [ -f /usr/bin/man.REAL ] && mv -f /usr/bin/man.REAL /usr/bin/man || true \
+ && mandb -q
+
+# -----------------------------------------------------------------------------
+# Locale y zona horaria.
+# NOTA: no se ejecuta `unminimize` (tarda muchísimo). Instalar man-db + manpages
+# es suficiente para que `man` funcione, que es lo que importa en este curso.
+# -----------------------------------------------------------------------------
+RUN sed -i 's/^# *\(es_CL.UTF-8\)/\1/; s/^# *\(en_US.UTF-8\)/\1/' /etc/locale.gen \
+ && locale-gen \
+ && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+ && echo $TZ > /etc/timezone
+
+ENV LANG=es_CL.UTF-8
+ENV LANGUAGE=es_CL:es
+ENV LC_ALL=es_CL.UTF-8
+
+# -----------------------------------------------------------------------------
+# Usuario de trabajo.
+# ⚠ Ubuntu 24.04 YA trae un usuario `ubuntu` ocupando el UID 1000, así que hay
+#   que eliminarlo antes o `useradd` falla con "UID 1000 is not unique".
+# -----------------------------------------------------------------------------
+ARG USERNAME=nico
+ARG PASSWORD=linux
+
+RUN userdel -r ubuntu 2>/dev/null || true \
+ && useradd -m -u 1000 -s /bin/bash "$USERNAME" \
+ && echo "$USERNAME:$PASSWORD" | chpasswd \
+ && usermod -aG sudo "$USERNAME" \
+ && echo "root:$PASSWORD" | chpasswd \
+ && mkdir -p /home/$USERNAME/workspace \
+ && chown -R $USERNAME:$USERNAME /home/$USERNAME
+
+# -----------------------------------------------------------------------------
+# Limpieza de units que no tienen sentido en un contenedor (consolas tty, udev,
+# espera de red). Sin esto el arranque es lento y `systemctl` muestra servicios
+# en estado `failed` que confunden al estudiar.
+# -----------------------------------------------------------------------------
+RUN systemctl mask \
+    dev-hugepages.mount \
+    sys-fs-fuse-connections.mount \
+    sys-kernel-config.mount \
+    systemd-udevd.service \
+    systemd-udev-trigger.service \
+    systemd-logind.service \
+    getty.target \
+    console-getty.service \
+    systemd-networkd-wait-online.service \
+ && rm -f /lib/systemd/system/multi-user.target.wants/getty.target
+
+# Habilitar servicios útiles para las clases de systemd/cron
+RUN systemctl enable cron rsyslog
+
+# Mensaje de bienvenida del lab
+RUN printf '%s\n' \
+    '' \
+    '  ┌──────────────────────────────────────────────┐' \
+    '  │  Laboratorio Ultimate Linux — Ubuntu 24.04   │' \
+    '  │  systemd activo · rompe lo que quieras       │' \
+    '  │  Trabajo persistente en ~/workspace          │' \
+    '  └──────────────────────────────────────────────┘' \
+    '' > /etc/motd
+
+VOLUME [ "/sys/fs/cgroup" ]
+
+# systemd apaga limpiamente al recibir SIGRTMIN+3 (equivale a un `shutdown`).
+STOPSIGNAL SIGRTMIN+3
+
+CMD ["/sbin/init"]
