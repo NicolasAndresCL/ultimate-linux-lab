@@ -102,13 +102,25 @@ completo está en el propio [compose.yaml](compose.yaml).
 ```
 ultimate-linux/
 ├── .github/workflows/ci.yml   # CI: lint, build+smoke test, escaneo de CVEs y publicación
+├── .githooks/pre-commit       # ejecuta verificar.sh antes de commitear infraestructura
 ├── Dockerfile        # dos etapas: `base` (terminal) y `desktop` (+ GNOME)
 ├── compose.yaml      # servicios lab y lab-cli: privileged, cgroups, puertos, volúmenes
+├── verificar.sh      # reproduce el job `lint` del CI en local
 ├── desktop/          # configuración del escritorio (VNC, noVNC, sesión GNOME)
 ├── workspace/        # ← tus scripts y ejercicios, editables desde VS Code
 ├── pasos.md          # chuleta completa de comandos Docker
 └── memory.md         # bitácora de hitos (no versionada)
 ```
+
+## Contribuir
+
+Tras clonar, activa el hook de verificación una sola vez:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Ejecuta `./verificar.sh` antes de pushear, o deja que el hook lo haga por ti.
 
 ## Integración continua
 

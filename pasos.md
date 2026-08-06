@@ -344,25 +344,35 @@ docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:latest    # escritorio, 2
 | `cli`, `24.04-cli` | Lab de terminal |
 | `sha-<commit>`, `sha-<commit>-cli` | Versión concreta, para volver atrás |
 
-### Reproducir el CI en local ANTES de pushear
+### Verificar en local: ya es automático
 
-Ahorra esperas de 15 minutos y evita dejar `main` en rojo. Ejecuta el job `lint` entero:
-
-```powershell
-docker run --rm -i hadolint/hadolint hadolint --ignore DL3008 --ignore DL3064 --ignore DL3059 - < Dockerfile
-docker run --rm -v "c:\dev\learning\hola_mundo\ultimate-linux:/mnt" -w /mnt koalaman/shellcheck:stable desktop/prepare-vnc-home desktop/xstartup
-docker compose config -q
-docker run --rm -v "c:\dev\learning\hola_mundo\ultimate-linux:/repo" -w /repo rhysd/actionlint:latest
-git ls-files --eol | Select-String 'w/crlf'    # no debe devolver nada
+```bash
+./verificar.sh
 ```
 
-Los dos fallos más habituales:
+Reproduce el job `lint` entero: hadolint, shellcheck, actionlint, compose, units, CRLF y
+hardening. Tarda unos segundos y evita esperar 15 minutos a que el CI te diga lo mismo.
+
+**No hace falta que te acuerdes**: el hook `.githooks/pre-commit` lo ejecuta solo, y únicamente
+cuando el commit toca `Dockerfile`, `compose.yaml`, `desktop/` o el workflow — los commits de
+documentación no esperan a que arranquen contenedores.
+
+```bash
+git config core.hooksPath .githooks   # activarlo tras clonar (una sola vez)
+./verificar.sh --rapido               # omite lo que necesita descargar imágenes
+git commit --no-verify                # saltárselo, solo con un motivo concreto
+```
+
+> El script existe porque el CI se rompió **dos veces** por no ejecutar hadolint en el momento
+> correcto, y las dos veces la "solución" fue una nota para acordarse. Un paso obligatorio que
+> se puede omitir sin que pase nada no es obligatorio.
+
+Los dos fallos más habituales que caza:
 
 - **CRLF** — si Windows convirtió los finales de línea, el build funciona en tu equipo y
   revienta en el runner de Linux.
-- **Cambios en el Dockerfile sin repasar hadolint** — al dividirlo en dos etapas, la
-  instrucción `SHELL` dejó de aplicarse a la segunda (no se hereda entre etapas) y el CI se
-  puso rojo. Si tocas el `Dockerfile`, vuelve a pasar hadolint.
+- **`SHELL` y `ARG` no se heredan entre etapas** — al dividir el Dockerfile en dos, la etapa
+  `desktop` volvió al `sh` por defecto y el CI se puso rojo con DL4006.
 
 ### Comprobar la salud del laboratorio
 
