@@ -59,6 +59,39 @@ jobs:
             echo "OK  $unit"
           done
 
+      - name: Hardening del laboratorio
+        # Equivalente al `check --deploy`: impide que una configuración insegura
+        # llegue a main sin que nadie se entere. El lab corre en modo privileged,
+        # y lo único que hace ese trade-off aceptable es que NO sea alcanzable
+        # desde la red. Si alguien quitara el bind a loopback, el pipeline debe
+        # gritar, no callar.
+        run: |
+          fallos=0
+
+          echo "--- los puertos publicados van solo a loopback ---"
+          # Un puerto sin IP ("6080:6080") o atado a 0.0.0.0 queda expuesto a la
+          # red. Uno con IP tiene tres partes ("127.0.0.1:6080:6080"), así que el
+          # patrón de dos números separados por ':' basta para detectar los malos.
+          expuestos=$(grep -nE '^[[:space:]]*-[[:space:]]*"([0-9]+:[0-9]+|0\.0\.0\.0:)' compose.yaml || true)
+          if [ -n "$expuestos" ]; then
+            echo "$expuestos"
+            echo "::error::hay puertos publicados sin fijar a 127.0.0.1"
+            fallos=1
+          fi
+          n_loopback=$(grep -cE '^[[:space:]]*-[[:space:]]*"127\.0\.0\.1:' compose.yaml || true)
+          echo "OK  $n_loopback puerto(s) atados a 127.0.0.1"
+
+          echo "--- ambas etapas definen HEALTHCHECK ---"
+          n=$(grep -c '^HEALTHCHECK' Dockerfile || true)
+          echo "HEALTHCHECK encontrados: $n"
+          [ "$n" -ge 2 ] || { echo "::error::falta el HEALTHCHECK de alguna etapa"; fallos=1; }
+
+          echo "--- la contraseña es parametrizable ---"
+          grep -q '^ARG LAB_PASSWORD' Dockerfile \
+            || { echo "::error::LAB_PASSWORD dejó de ser un ARG"; fallos=1; }
+
+          exit $fallos
+
       - name: Finales de línea LF
         # Protege .gitattributes: con CRLF el Dockerfile rompe el build en Linux.
         # Es la regresión más silenciosa de este proyecto.
