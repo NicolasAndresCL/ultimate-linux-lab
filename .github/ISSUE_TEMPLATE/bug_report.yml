@@ -1,0 +1,73 @@
+name: Reportar un fallo
+description: Algo del laboratorio no funciona como debería
+title: "[bug]: "
+labels: [bug]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por reportarlo. Cuanto más concreto sea, antes se arregla.
+
+        > 💡 Antes de abrir el issue, prueba a recrear el lab:
+        > `docker compose down && docker compose up -d --build`.
+        > El laboratorio está diseñado para ser desechable.
+
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Qué ocurre
+      description: Qué esperabas que pasara y qué pasó en su lugar.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducir
+    attributes:
+      label: Cómo reproducirlo
+      placeholder: |
+        1. docker compose up -d --build
+        2. Abrir http://localhost:6080/vnc.html
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Qué parte falla
+      options:
+        - Construcción de la imagen (docker compose build)
+        - Arranque del contenedor / systemd
+        - Escritorio gráfico (GNOME, VNC, noVNC)
+        - Persistencia (volúmenes, workspace)
+        - Documentación
+        - Otro
+    validations:
+      required: true
+
+  - type: input
+    id: docker
+    attributes:
+      label: Versión de Docker
+      description: Salida de `docker --version`
+      placeholder: Docker version 29.3.1, build c2be9cc
+    validations:
+      required: true
+
+  - type: input
+    id: so
+    attributes:
+      label: Sistema operativo
+      placeholder: Windows 11 con Docker Desktop / Ubuntu 24.04 / macOS 15
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Salida de `docker compose logs --tail 50`. Si falla el escritorio, añade
+        `docker exec ubuntu-lab journalctl -u vncserver -n 40 --no-pager`.
+      render: shell

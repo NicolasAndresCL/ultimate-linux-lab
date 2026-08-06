@@ -1,0 +1,29 @@
+version: 2
+
+updates:
+  # Acciones del pipeline: evita que el CI se quede con versiones obsoletas.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencias
+      - ci
+    commit-message:
+      # Conventional Commits en español, igual que el resto del historial.
+      prefix: chore
+      include: scope
+
+  # Imagen base del laboratorio (ubuntu:24.04 en el Dockerfile).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencias
+      - docker
+    commit-message:
+      prefix: chore
+      include: scope

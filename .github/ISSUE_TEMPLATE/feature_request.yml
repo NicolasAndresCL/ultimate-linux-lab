@@ -1,0 +1,32 @@
+name: Proponer una mejora
+description: Una idea para que el laboratorio sea más útil
+title: "[mejora]: "
+labels: [mejora]
+
+body:
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Qué propones
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivo
+    attributes:
+      label: Qué problema resuelve
+      description: |
+        Qué tarea del curso se vuelve más fácil, o qué fricción desaparece.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: alcance
+    attributes:
+      label: Encaja con el proyecto
+      description: |
+        La prioridad del lab es ser **desechable y reconstruible**, no ser ligero
+        ni elegante. Las propuestas que compliquen recrearlo desde cero no encajan.
+      options:
+        - label: La propuesta mantiene el lab reconstruible con un solo comando
+          required: true
