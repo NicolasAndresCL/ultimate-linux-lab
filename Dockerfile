@@ -2,7 +2,7 @@
 #  Laboratorio Ubuntu 24.04 LTS con systemd — curso "Ultimate Linux" (Hola Mundo)
 #  Reemplaza a la máquina virtual: desechable, reproducible y arranca en segundos.
 # =============================================================================
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # `container=docker` le indica a systemd que corre dentro de un contenedor
 # y debe saltarse las tareas propias de hardware real.
