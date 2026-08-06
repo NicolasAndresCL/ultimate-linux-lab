@@ -254,6 +254,53 @@ el instructor en su máquina virtual.
 
 ---
 
+## 8 bis. Integración continua
+
+Cada push a `main` y cada Pull Request ejecutan
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml). El pipeline no se limita a revisar
+sintaxis: **construye la imagen y levanta el lab** para comprobar que funciona de verdad.
+
+| Job | Qué hace | Duración |
+|---|---|---|
+| `lint` | hadolint del Dockerfile, shellcheck de `desktop/`, valida el compose y las units, comprueba que no haya CRLF | ~1 min |
+| `build` | Construye la imagen y levanta el lab: systemd, `man`, usuario `nico`, `cron`, el escritorio y noVNC en el 6080 | ~15 min |
+| `publish` | Sube la imagen a GHCR (solo en `main`) | ~3 min |
+
+### Seguirlo desde la terminal
+
+```bash
+gh run list --limit 5        # últimas ejecuciones
+gh run watch                 # seguir la actual en vivo
+gh run view --log-failed     # solo los logs de lo que falló
+gh workflow run ci.yml       # lanzarlo a mano
+```
+
+### Usar la imagen que publica el CI
+
+Evita los 15 minutos de build en cualquier equipo:
+
+```bash
+docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:latest
+```
+
+Tags disponibles: `latest`, `24.04` y `sha-<commit>` para volver a una versión concreta.
+
+### Si el CI falla y en tu máquina funciona
+
+Reproduce localmente lo mismo que hace el runner:
+
+```bash
+docker compose config -q                      # sintaxis del compose
+docker run --rm -v "${PWD}:/mnt" -w /mnt koalaman/shellcheck:stable desktop/prepare-vnc-home
+git ls-files --eol | grep w/crlf              # no debe devolver nada
+docker compose down -v && docker compose up -d --build   # build desde cero
+```
+
+El fallo más habitual es el **CRLF**: si Windows convirtió los finales de línea, el build
+funciona en tu equipo pero revienta en el runner de Linux.
+
+---
+
 ## 9. Troubleshooting
 
 ### `systemctl` responde "Failed to connect to bus"

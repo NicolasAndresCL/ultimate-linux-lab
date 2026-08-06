@@ -1,5 +1,7 @@
 # Laboratorio Ultimate Linux — Ubuntu 24.04 con Docker
 
+[![CI](https://github.com/NicolasAndresCL/ultimate-linux-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/NicolasAndresCL/ultimate-linux-lab/actions/workflows/ci.yml)
+
 Entorno Linux **desechable y reproducible** para seguir el curso *Ultimate Linux* de
 Hola Mundo, con **escritorio GNOME en el navegador**. Sustituye a una máquina virtual: se
 rompe, se destruye y se recrea en segundos sin perder el trabajo guardado.
@@ -30,6 +32,19 @@ docker compose up -d --build
 
 > La primera construcción tarda **10-15 minutos**: descarga el escritorio GNOME completo.
 > Las siguientes son casi instantáneas gracias a la caché de capas de Docker.
+> Si prefieres no esperar, usa la imagen ya construida (abajo).
+
+### Usar la imagen ya construida
+
+El CI publica la imagen en GitHub Container Registry en cada cambio de `main`, así que puedes
+saltarte el build y bajarla directamente (~2 minutos):
+
+```bash
+docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:latest
+```
+
+Para que `docker compose` la use en vez de construirla, comenta el bloque `build:` de
+[compose.yaml](compose.yaml) y apunta `image:` a esa ruta.
 
 ### Escritorio gráfico
 
@@ -51,6 +66,7 @@ Para salir de la terminal: `exit`. Para apagar el lab: `docker compose stop`.
 
 ```
 ultimate-linux/
+├── .github/workflows/ci.yml   # CI: lint, build, smoke test y publicación en GHCR
 ├── Dockerfile        # imagen: Ubuntu 24.04 + systemd + GNOME + toolkit
 ├── compose.yaml      # servicio ubuntu-lab: privileged, cgroups, puertos, volúmenes
 ├── desktop/          # configuración del escritorio (VNC, noVNC, sesión GNOME)
@@ -58,6 +74,12 @@ ultimate-linux/
 ├── pasos.md          # chuleta completa de comandos Docker
 └── memory.md         # bitácora de hitos (no versionada)
 ```
+
+## Integración continua
+
+Cada push verifica que el laboratorio **construye y arranca de verdad**, no solo que el
+`Dockerfile` esté bien escrito: levanta el contenedor y comprueba systemd, `man`, el usuario
+`nico` y que el escritorio responde en el puerto 6080. Detalles en [pasos.md](pasos.md).
 
 ## Puertos
 
