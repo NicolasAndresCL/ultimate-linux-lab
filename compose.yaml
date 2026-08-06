@@ -1,21 +1,57 @@
+# =============================================================================
+#  Dos laboratorios sobre la misma imagen base:
+#
+#    docker compose up -d                   → lab con escritorio GNOME (por defecto)
+#    docker compose --profile cli up -d     → lab solo terminal, arranca en segundos
+#
+#  Comparten el volumen /home, así que tu trabajo está en los dos.
+# =============================================================================
+
+# --- Configuración común a ambos servicios -----------------------------------
+x-lab-common: &lab-common
+  # ¿POR QUÉ `privileged: true`?
+  #
+  # systemd necesita montar sistemas de ficheros del kernel y escribir en la
+  # jerarquía de cgroups. Sin este permiso, `systemctl` falla con "Failed to
+  # connect to bus" y se pierde la mitad del temario del curso: servicios,
+  # journald, cron, targets.
+  #
+  # El trade-off es CONSCIENTE y aceptable aquí porque:
+  #   1. El laboratorio es desechable: si se rompe, se recrea. No guarda nada
+  #      valioso ni tiene acceso a credenciales.
+  #   2. Los puertos se publican solo en 127.0.0.1, nunca en la red.
+  #   3. Se ejecuta en la máquina de desarrollo del propio estudiante, no en un
+  #      servidor compartido ni en producción.
+  #
+  # Un contenedor privilegiado equivale, en la práctica, a root en el host. NO
+  # reutilices esta configuración para servicios expuestos a Internet. La
+  # alternativa —capacidades sueltas como SYS_ADMIN— no basta para systemd
+  # completo, y era justo lo que hacía inservible la máquina virtual.
+  privileged: true
+  cgroup: host
+  tmpfs:
+    - /run
+    - /run/lock
+    - /tmp
+  stdin_open: true
+  tty: true
+  restart: unless-stopped
+
 services:
-  ubuntu-lab:
+  # --- Laboratorio completo, con escritorio GNOME ----------------------------
+  lab:
+    <<: *lab-common
     build:
       context: .
+      target: desktop
       args:
-        USERNAME: nico
-        PASSWORD: linux
+        LAB_USERNAME: nico
+        # Cámbiala si vas a exponer el lab fuera de tu equipo:
+        #   docker compose build --build-arg LAB_PASSWORD='la-que-quieras'
+        LAB_PASSWORD: ${LAB_PASSWORD:-linux}
     image: ultimate-linux-lab:24.04
     container_name: ubuntu-lab
     hostname: ubuntu-lab
-
-    # --- Requisitos de systemd dentro de Docker ---
-    privileged: true          # systemd necesita capacidades ampliadas
-    cgroup: host              # comparte el árbol de cgroups del host (cgroup v2)
-    tmpfs:                    # systemd exige estos directorios escribibles en RAM
-      - /run
-      - /run/lock
-      - /tmp
 
     ports:
       # Se publican solo en 127.0.0.1: el escritorio queda accesible desde este
@@ -32,16 +68,30 @@ services:
     shm_size: "1gb"
 
     volumes:
-      # cgroups del host (si systemd no arranca, ver troubleshooting en pasos.md)
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      # /home persistente: usuarios, .bashrc, historial. Sobrevive a `docker rm`.
       - lab-home:/home
-      # Carpeta editable desde Windows / VS Code.
       - ./workspace:/home/nico/workspace
 
-    stdin_open: true
-    tty: true
-    restart: unless-stopped
+  # --- Laboratorio de terminal: mismo sistema, sin escritorio ----------------
+  # Construye en 2-3 minutos en vez de 15 y cubre casi todo el temario:
+  # ficheros, permisos, usuarios, procesos, systemd, cron, redes y scripting.
+  lab-cli:
+    <<: *lab-common
+    profiles: [cli]
+    build:
+      context: .
+      target: base
+      args:
+        LAB_USERNAME: nico
+        LAB_PASSWORD: ${LAB_PASSWORD:-linux}
+    image: ultimate-linux-lab:24.04-cli
+    container_name: ubuntu-lab-cli
+    hostname: ubuntu-lab
+
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - lab-home:/home
+      - ./workspace:/home/nico/workspace
 
 volumes:
   lab-home:

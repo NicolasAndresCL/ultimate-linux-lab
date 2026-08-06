@@ -1,8 +1,14 @@
 # =============================================================================
 #  Laboratorio Ubuntu 24.04 LTS con systemd — curso "Ultimate Linux" (Hola Mundo)
 #  Reemplaza a la máquina virtual: desechable, reproducible y arranca en segundos.
+#
+#  Dos etapas:
+#    base     → sistema con systemd y el toolkit del curso (~600 MB, 2-3 min)
+#    desktop  → base + escritorio GNOME accesible por navegador (~2,7 GB, ~15 min)
+#
+#  Construir solo la terminal:  docker build --target base .
 # =============================================================================
-FROM ubuntu:24.04
+FROM ubuntu:24.04 AS base
 
 # `container=docker` le indica a systemd que corre dentro de un contenedor
 # y debe saltarse las tareas propias de hardware real.
@@ -72,16 +78,33 @@ ENV LC_ALL=es_CL.UTF-8
 # ⚠ Ubuntu 24.04 YA trae un usuario `ubuntu` ocupando el UID 1000, así que hay
 #   que eliminarlo antes o `useradd` falla con "UID 1000 is not unique".
 # -----------------------------------------------------------------------------
-ARG USERNAME=nico
-ARG PASSWORD=linux
+ARG LAB_USERNAME=nico
+
+# Contraseña de `nico` y de `root`.
+#
+# El valor por defecto es cómodo para un lab local, pero la imagen que el CI
+# publica en GHCR es PÚBLICA: cualquiera puede descargarla y sus credenciales
+# son de conocimiento público. Lo que evita que eso importe es que los puertos
+# se publican solo en 127.0.0.1 (ver compose.yaml) y que el lab es desechable.
+#
+# Para construir con otra:
+#     docker compose build --build-arg LAB_PASSWORD='la-que-quieras'
+#
+# ⚠ LIMITACIÓN VERIFICADA: el valor pasado por --build-arg queda registrado en
+#   `docker history` de la imagen resultante. Sirve para no dejar la contraseña
+#   por defecto, pero NO es un mecanismo de secretos: no uses ahí una clave que
+#   reutilices en otro sitio, ni publiques esa imagen en un registro.
+#   Para cambiarla sin dejar rastro, hazlo dentro del contenedor con `passwd`
+#   (persiste mientras no hagas `docker compose down`).
+ARG LAB_PASSWORD=linux
 
 RUN userdel -r ubuntu 2>/dev/null || true \
- && useradd -m -u 1000 -s /bin/bash "$USERNAME" \
- && echo "$USERNAME:$PASSWORD" | chpasswd \
- && usermod -aG sudo "$USERNAME" \
- && echo "root:$PASSWORD" | chpasswd \
- && mkdir -p /home/$USERNAME/workspace \
- && chown -R $USERNAME:$USERNAME /home/$USERNAME
+ && useradd -m -u 1000 -s /bin/bash "$LAB_USERNAME" \
+ && echo "$LAB_USERNAME:$LAB_PASSWORD" | chpasswd \
+ && usermod -aG sudo "$LAB_USERNAME" \
+ && echo "root:$LAB_PASSWORD" | chpasswd \
+ && mkdir -p "/home/$LAB_USERNAME/workspace" \
+ && chown -R "$LAB_USERNAME:$LAB_USERNAME" "/home/$LAB_USERNAME"
 
 # -----------------------------------------------------------------------------
 # Limpieza de units que no tienen sentido en un contenedor (consolas tty, udev,
@@ -98,6 +121,27 @@ RUN systemctl mask \
     console-getty.service \
     systemd-networkd-wait-online.service \
  && rm -f /lib/systemd/system/multi-user.target.wants/getty.target
+
+# Servicios del curso en la etapa de terminal.
+RUN systemctl enable cron rsyslog
+
+RUN printf '%s\n' \
+    '' \
+    '  ┌──────────────────────────────────────────────┐' \
+    '  │  Laboratorio Ultimate Linux — Ubuntu 24.04   │' \
+    '  │  systemd activo · rompe lo que quieras       │' \
+    '  │  Trabajo persistente en ~/workspace          │' \
+    '  └──────────────────────────────────────────────┘' \
+    '' > /etc/motd
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]
+
+
+# =============================================================================
+#  ETAPA `desktop` — añade el escritorio GNOME sobre el sistema anterior
+# =============================================================================
+FROM base AS desktop
 
 # -----------------------------------------------------------------------------
 # ESCRITORIO GRÁFICO — GNOME de Ubuntu, accesible desde el navegador
@@ -134,25 +178,28 @@ RUN systemctl disable gdm3.service 2>/dev/null || true; \
 # prepare-vnc-home la copia al home real en cada arranque.
 COPY desktop/xstartup          /opt/lab-skel/.vnc/xstartup
 COPY desktop/prepare-vnc-home  /usr/local/bin/prepare-vnc-home
-RUN echo "linux" | vncpasswd -f > /opt/lab-skel/.vnc/passwd \
+
+# Los ARG no cruzan de una etapa a otra: hay que volver a declararlos.
+ARG LAB_USERNAME=nico
+ARG LAB_PASSWORD=linux
+
+RUN echo "$LAB_PASSWORD" | vncpasswd -f > /opt/lab-skel/.vnc/passwd \
  && chmod 600 /opt/lab-skel/.vnc/passwd \
  && chmod 755 /opt/lab-skel/.vnc/xstartup /usr/local/bin/prepare-vnc-home \
- && chown -R nico:nico /opt/lab-skel
+ && chown -R "$LAB_USERNAME:$LAB_USERNAME" /opt/lab-skel
 
 # Servicios systemd del escritorio: así se gestionan con systemctl, igual que
 # cualquier otro servicio del curso.
 COPY desktop/vncserver.service /etc/systemd/system/vncserver.service
 COPY desktop/novnc.service     /etc/systemd/system/novnc.service
 
-# Habilitar servicios útiles para las clases de systemd/cron, más el escritorio
-RUN systemctl enable cron rsyslog vncserver novnc
+RUN systemctl enable vncserver novnc
 
-# Mensaje de bienvenida del lab
 RUN printf '%s\n' \
     '' \
     '  ┌──────────────────────────────────────────────┐' \
     '  │  Laboratorio Ultimate Linux — Ubuntu 24.04   │' \
-    '  │  systemd activo · rompe lo que quieras       │' \
+    '  │  Escritorio: http://localhost:6080/vnc.html  │' \
     '  │  Trabajo persistente en ~/workspace          │' \
     '  └──────────────────────────────────────────────┘' \
     '' > /etc/motd
