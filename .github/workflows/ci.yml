@@ -22,7 +22,7 @@ jobs:
     name: Lint y validación
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Buenas prácticas del Dockerfile
         uses: hadolint/hadolint-action@v3.1.0
@@ -77,7 +77,7 @@ jobs:
     needs: lint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Liberar espacio en el runner
         # La imagen pesa ~2,7 GB y el runner ronda los 14 GB libres.
@@ -179,7 +179,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Liberar espacio en el runner
         run: |
