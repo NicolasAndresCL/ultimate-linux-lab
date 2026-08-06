@@ -134,6 +134,13 @@ RUN printf '%s\n' \
     '  └──────────────────────────────────────────────┘' \
     '' > /etc/motd
 
+# Salud real del sistema, no "el proceso sigue vivo": systemd informa `running`
+# solo si todas sus units arrancaron. `degraded` también se acepta porque el lab
+# es para romper cosas: un servicio caído a propósito no debe marcar la imagen
+# como enferma. Lo que sí falla es que el bus de systemd no responda.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD ["/bin/bash", "-c", "systemctl is-system-running | grep -qE 'running|degraded|starting'"]
+
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
 
@@ -142,6 +149,11 @@ CMD ["/sbin/init"]
 #  ETAPA `desktop` — añade el escritorio GNOME sobre el sistema anterior
 # =============================================================================
 FROM base AS desktop
+
+# Igual que los ARG, la instrucción SHELL NO cruza de una etapa a otra: sin esta
+# línea, los RUN con pipe de aquí abajo vuelven al `sh` por defecto y un fallo a
+# la izquierda del pipe pasaría desapercibido (DL4006).
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # -----------------------------------------------------------------------------
 # ESCRITORIO GRÁFICO — GNOME de Ubuntu, accesible desde el navegador
@@ -205,6 +217,13 @@ RUN printf '%s\n' \
     '' > /etc/motd
 
 VOLUME [ "/sys/fs/cgroup" ]
+
+# El escritorio amplía el healthcheck de la etapa base: además de systemd, se
+# comprueba que noVNC sirve el cliente web. Sin esto, un GNOME que no arranca
+# dejaría el contenedor marcado como sano con la pantalla en negro.
+# GNOME tarda en levantar, de ahí el start-period largo.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD ["/bin/bash", "-c", "systemctl is-system-running | grep -qE 'running|degraded|starting' && curl -fsS -o /dev/null http://localhost:6080/vnc.html"]
 
 # systemd apaga limpiamente al recibir SIGRTMIN+3 (equivale a un `shutdown`).
 STOPSIGNAL SIGRTMIN+3
