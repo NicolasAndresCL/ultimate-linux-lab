@@ -254,12 +254,15 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.target }}
 
       - name: Informe completo para la pestaña Security
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: lab-scan:${{ matrix.target }}
           format: sarif
           output: trivy-${{ matrix.target }}.sarif
           severity: CRITICAL,HIGH,MEDIUM
+          # Sin esto, Trivy ignora `severity` al generar SARIF y vuelca también
+          # LOW y UNKNOWN: el informe se llena de ruido de bajo impacto.
+          limit-severities-for-sarif: true
 
       - name: Subir el informe
         uses: github/codeql-action/upload-sarif@v3
@@ -268,7 +271,7 @@ jobs:
           category: trivy-${{ matrix.target }}
 
       - name: Romper el build si hay CRITICAL con parche disponible
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: lab-scan:${{ matrix.target }}
           format: table
