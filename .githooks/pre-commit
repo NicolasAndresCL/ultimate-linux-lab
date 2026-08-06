@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Corre las verificaciones del CI antes de cada commit que toque infraestructura.
+#
+# Por qué existe: dos veces se rompió el CI por no ejecutar hadolint en el momento
+# correcto, y las dos veces la "solución" fue una nota escrita para acordarse.
+# Un paso obligatorio que se puede omitir sin que pase nada no es obligatorio.
+#
+# Activarlo:   git config core.hooksPath .githooks
+# Saltarlo:    git commit --no-verify   (solo si sabes por qué)
+set -uo pipefail
+
+# Solo se verifica si el commit toca algo que el CI comprueba: los commits de
+# documentación no deben esperar a que arranquen tres contenedores.
+relevantes=$(git diff --cached --name-only --diff-filter=ACMR \
+    | grep -E '^(Dockerfile|compose\.ya?ml|verificar\.sh|desktop/|\.github/workflows/|\.gitattributes)' || true)
+
+if [ -z "$relevantes" ]; then
+    exit 0
+fi
+
+echo "Cambios en infraestructura detectados; verificando antes de commitear:"
+echo "$relevantes" | sed 's/^/  · /'
+
+if ! ./verificar.sh; then
+    echo
+    echo "Commit abortado. Corrige lo anterior, o usa 'git commit --no-verify'"
+    echo "si tienes un motivo concreto para saltarte la verificación."
+    exit 1
+fi
