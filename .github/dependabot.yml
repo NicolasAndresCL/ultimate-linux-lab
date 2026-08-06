@@ -27,3 +27,14 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # La versión de Ubuntu es una DECISIÓN DE DISEÑO, no una dependencia que
+      # convenga actualizar sola. El curso se imparte sobre 24.04 LTS, y la
+      # versión aparece en el README, en pasos.md, en el tag de la imagen
+      # publicada y en los nombres de los paquetes de GNOME y TigerVNC.
+      # Se siguen recibiendo parches dentro de 24.04; se descartan los saltos
+      # de versión (PR #1 propuso 26.04 y se cerró por esto).
+      - dependency-name: ubuntu
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
