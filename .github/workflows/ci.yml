@@ -31,8 +31,11 @@ jobs:
           # Reglas ignoradas a propósito, no por comodidad:
           #   DL3008 — no se fijan versiones de apt: el lab debe traer los
           #            paquetes actuales de Ubuntu 24.04.
-          #   DL3064 — la contraseña `linux` es intencional y pública; es un
-          #            laboratorio local desechable, está documentada en el README.
+          #   DL3064 — la contraseña por defecto es de conocimiento público y así
+          #            se documenta. Es un lab desechable cuyos puertos van solo a
+          #            loopback, y `LAB_PASSWORD` permite cambiarla al construir.
+          #            Revisar esta excepción si algún día el lab dejara de ser
+          #            loopback-only: entonces dejaría de ser aceptable.
           #   DL3059 — los RUN van separados a propósito, para que Docker cachee
           #            por etapas y un cambio en GNOME no invalide el sistema base.
           ignore: DL3008,DL3064,DL3059
@@ -73,14 +76,31 @@ jobs:
   # ninguna la detecta una revisión visual del Dockerfile.
   # ---------------------------------------------------------------------------
   build:
-    name: Build y smoke test
+    name: Build y smoke test (${{ matrix.target }})
     needs: lint
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # El lab de terminal construye en 2-3 min y cubre casi todo el temario.
+          - target: base
+            service: lab-cli
+            contenedor: ubuntu-lab-cli
+            tag: ultimate-linux-lab:24.04-cli
+            profile: cli
+            escritorio: false
+          - target: desktop
+            service: lab
+            contenedor: ubuntu-lab
+            tag: ultimate-linux-lab:24.04
+            profile: ""
+            escritorio: true
     steps:
       - uses: actions/checkout@v7
 
       - name: Liberar espacio en el runner
-        # La imagen pesa ~2,7 GB y el runner ronda los 14 GB libres.
+        # La imagen con escritorio pesa ~2,7 GB y el runner ronda los 14 GB.
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
                       "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
@@ -92,18 +112,28 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          target: ${{ matrix.target }}
           load: true
-          tags: ultimate-linux-lab:24.04
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Se usa el mismo tag que espera el compose, para que `up` levante
+          # exactamente la imagen que este job acaba de construir, sin rehacerla.
+          tags: ${{ matrix.tag }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
       - name: Levantar el laboratorio
-        run: docker compose up -d
+        run: |
+          if [ -n "${{ matrix.profile }}" ]; then
+            docker compose --profile "${{ matrix.profile }}" up -d "${{ matrix.service }}"
+          else
+            docker compose up -d "${{ matrix.service }}"
+          fi
 
       - name: Esperar a que systemd termine de arrancar
+        env:
+          LAB: ${{ matrix.contenedor }}
         run: |
           for i in $(seq 1 30); do
-            estado=$(docker exec ubuntu-lab systemctl is-system-running 2>/dev/null || true)
+            estado=$(docker exec "$LAB" systemctl is-system-running 2>/dev/null || true)
             echo "intento $i: $estado"
             case "$estado" in
               running|degraded) exit 0 ;;
@@ -114,36 +144,54 @@ jobs:
           exit 1
 
       - name: Verificar el sistema base
+        env:
+          LAB: ${{ matrix.contenedor }}
         run: |
           echo "--- usuario nico ---"
-          docker exec ubuntu-lab id nico | tee /dev/stderr | grep -q 'uid=1000' \
+          docker exec "$LAB" id nico | tee /dev/stderr | grep -q 'uid=1000' \
             || { echo "::error::nico no tiene uid 1000"; exit 1; }
-          docker exec ubuntu-lab id nico | grep -q 'sudo' \
+          docker exec "$LAB" id nico | grep -q 'sudo' \
             || { echo "::error::nico no está en el grupo sudo"; exit 1; }
 
           echo "--- man (protege el arreglo de man.REAL) ---"
-          docker exec -u nico ubuntu-lab man ls | head -1 | grep -qi 'LS' \
+          docker exec -u nico "$LAB" man ls | head -1 | grep -qi 'LS' \
             || { echo "::error::man no funciona"; exit 1; }
 
           echo "--- servicios del curso ---"
           for s in cron rsyslog; do
-            estado=$(docker exec ubuntu-lab systemctl is-active "$s")
+            estado=$(docker exec "$LAB" systemctl is-active "$s")
             echo "$s: $estado"
             [ "$estado" = active ] || { echo "::error::$s no está activo"; exit 1; }
           done
 
+      - name: Verificar que el lab de terminal NO trae escritorio
+        if: ${{ !matrix.escritorio }}
+        env:
+          LAB: ${{ matrix.contenedor }}
+        run: |
+          # Si GNOME se colara en la etapa `base`, el build volvería a durar 15
+          # minutos sin que nadie se diera cuenta.
+          if docker exec "$LAB" test -x /usr/bin/gnome-shell 2>/dev/null; then
+            echo "::error::la etapa base incluye GNOME; debería ser solo terminal"
+            exit 1
+          fi
+          echo "OK  sin escritorio, como se espera"
+
       - name: Verificar el escritorio
+        if: ${{ matrix.escritorio }}
+        env:
+          LAB: ${{ matrix.contenedor }}
         run: |
           echo "--- GNOME tarda en arrancar; damos margen ---"
           for i in $(seq 1 24); do
-            estado=$(docker exec ubuntu-lab systemctl is-active vncserver 2>/dev/null || true)
+            estado=$(docker exec "$LAB" systemctl is-active vncserver 2>/dev/null || true)
             echo "intento $i: vncserver=$estado"
             [ "$estado" = active ] && break
             sleep 5
           done
-          [ "$(docker exec ubuntu-lab systemctl is-active vncserver)" = active ] \
+          [ "$(docker exec "$LAB" systemctl is-active vncserver)" = active ] \
             || { echo "::error::vncserver no arrancó"; exit 1; }
-          [ "$(docker exec ubuntu-lab systemctl is-active novnc)" = active ] \
+          [ "$(docker exec "$LAB" systemctl is-active novnc)" = active ] \
             || { echo "::error::novnc no arrancó"; exit 1; }
 
           echo "--- noVNC responde en el 6080 ---"
@@ -151,33 +199,103 @@ jobs:
             || { echo "::error::noVNC no responde"; exit 1; }
 
           echo "--- gnome-shell corriendo ---"
-          docker exec ubuntu-lab pgrep -c gnome-shell \
+          docker exec "$LAB" pgrep -c gnome-shell \
             || { echo "::error::gnome-shell no está corriendo"; exit 1; }
 
       - name: Diagnóstico (solo si algo falló)
         if: failure()
+        env:
+          LAB: ${{ matrix.contenedor }}
         run: |
-          docker compose ps || true
-          docker compose logs --tail 100 || true
-          docker exec ubuntu-lab journalctl -u vncserver -n 60 --no-pager || true
-          docker exec ubuntu-lab systemctl --failed || true
+          docker compose --profile cli ps || true
+          docker compose --profile cli logs --tail 100 || true
+          docker exec "$LAB" journalctl -u vncserver -n 60 --no-pager || true
+          docker exec "$LAB" systemctl --failed || true
 
       - name: Apagar el laboratorio
         if: always()
-        run: docker compose down -v || true
+        run: docker compose --profile cli down -v || true
+
+  # ---------------------------------------------------------------------------
+  # Escaneo de vulnerabilidades. La imagen se publica en un registro PÚBLICO, así
+  # que hay que saber qué CVEs lleva. El informe completo va a la pestaña
+  # Security del repositorio; el build solo se rompe si aparece un CRITICAL que
+  # YA tiene parche disponible — fallar por CVEs sin arreglo convertiría el CI en
+  # ruido que se acaba ignorando.
+  # ---------------------------------------------------------------------------
+  scan:
+    name: Vulnerabilidades (${{ matrix.target }})
+    needs: lint
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [base, desktop]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Liberar espacio en el runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Construir la imagen a escanear
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          load: true
+          tags: lab-scan:${{ matrix.target }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+
+      - name: Informe completo para la pestaña Security
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: lab-scan:${{ matrix.target }}
+          format: sarif
+          output: trivy-${{ matrix.target }}.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+
+      - name: Subir el informe
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.target }}.sarif
+          category: trivy-${{ matrix.target }}
+
+      - name: Romper el build si hay CRITICAL con parche disponible
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: lab-scan:${{ matrix.target }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
 
   # ---------------------------------------------------------------------------
   # Publica la imagen para que instalar el lab sea un `docker pull` de ~2 min
   # en vez de un build de 15. Solo en main: los PR no publican.
   # ---------------------------------------------------------------------------
   publish:
-    name: Publicar en GHCR
-    needs: build
+    name: Publicar en GHCR (${{ matrix.target }})
+    needs: [build, scan]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: desktop
+            sufijo: ""          # `latest` y `24.04`
+          - target: base
+            sufijo: "-cli"      # `cli` y `24.04-cli`
     steps:
       - uses: actions/checkout@v7
 
@@ -201,16 +319,17 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest
-            type=raw,value=24.04
-            type=sha,prefix=sha-,format=short
+            type=raw,value=${{ matrix.target == 'desktop' && 'latest' || 'cli' }}
+            type=raw,value=24.04${{ matrix.sufijo }}
+            type=sha,prefix=sha-,suffix=${{ matrix.sufijo }},format=short
 
       - name: Construir y publicar
         uses: docker/build-push-action@v7
         with:
           context: .
+          target: ${{ matrix.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Reutiliza la caché que dejó el job `build`: no reconstruye desde cero.
-          cache-from: type=gha
+          cache-from: type=gha,scope=${{ matrix.target }}
