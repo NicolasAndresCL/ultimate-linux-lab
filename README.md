@@ -114,9 +114,16 @@ ultimate-linux/
 
 Cada push verifica que **ambos laboratorios construyen y arrancan de verdad**, no solo que el
 `Dockerfile` esté bien escrito: levanta los contenedores y comprueba systemd, `man`, el
-usuario `nico` y que el escritorio responde en el 6080. Además **escanea las imágenes con
-Trivy** antes de publicarlas, y el informe de vulnerabilidades queda en la pestaña *Security*
-del repositorio. Detalles en [pasos.md](pasos.md).
+usuario `nico` y que el escritorio responde en el 6080. Además:
+
+- **Escanea las imágenes con Trivy** antes de publicarlas; el informe queda en la pestaña
+  *Security* del repositorio.
+- **Verifica el hardening**: que ningún puerto se publique fuera de `127.0.0.1`, que ambas
+  etapas definan `HEALTHCHECK` y que la contraseña siga siendo parametrizable. Si alguien
+  quitara el bind a loopback, el pipeline falla en vez de callar.
+
+Ambas imágenes traen `HEALTHCHECK`, así que `docker ps` muestra `(healthy)` cuando el
+laboratorio está realmente operativo. Detalles en [pasos.md](pasos.md).
 
 ## Puertos
 

@@ -291,7 +291,7 @@ sintaxis: **construye la imagen y levanta el lab** para comprobar que funciona d
 
 | Job | Qué hace | Duración |
 |---|---|---|
-| `lint` | hadolint del Dockerfile, shellcheck de `desktop/`, valida el compose y las units, comprueba que no haya CRLF | ~1 min |
+| `lint` | hadolint, shellcheck, compose, units, CRLF y **hardening** (puertos en loopback, healthchecks, contraseña parametrizable) | ~1 min |
 | `build` (×2) | Construye **cada target** y levanta el lab: systemd, `man`, usuario `nico`, `cron` y —solo en `desktop`— el escritorio y noVNC en el 6080 | 3 y 15 min |
 | `scan` (×2) | **Trivy** sobre ambas imágenes; el informe va a la pestaña *Security* | ~5 min |
 | `publish` (×2) | Sube ambas variantes a GHCR (solo en `main`) | ~3 min |
@@ -344,19 +344,39 @@ docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:latest    # escritorio, 2
 | `cli`, `24.04-cli` | Lab de terminal |
 | `sha-<commit>`, `sha-<commit>-cli` | Versión concreta, para volver atrás |
 
-### Si el CI falla y en tu máquina funciona
+### Reproducir el CI en local ANTES de pushear
 
-Reproduce localmente lo mismo que hace el runner:
+Ahorra esperas de 15 minutos y evita dejar `main` en rojo. Ejecuta el job `lint` entero:
 
-```bash
-docker compose config -q                      # sintaxis del compose
-docker run --rm -v "${PWD}:/mnt" -w /mnt koalaman/shellcheck:stable desktop/prepare-vnc-home
-git ls-files --eol | grep w/crlf              # no debe devolver nada
-docker compose down -v && docker compose up -d --build   # build desde cero
+```powershell
+docker run --rm -i hadolint/hadolint hadolint --ignore DL3008 --ignore DL3064 --ignore DL3059 - < Dockerfile
+docker run --rm -v "c:\dev\learning\hola_mundo\ultimate-linux:/mnt" -w /mnt koalaman/shellcheck:stable desktop/prepare-vnc-home desktop/xstartup
+docker compose config -q
+docker run --rm -v "c:\dev\learning\hola_mundo\ultimate-linux:/repo" -w /repo rhysd/actionlint:latest
+git ls-files --eol | Select-String 'w/crlf'    # no debe devolver nada
 ```
 
-El fallo más habitual es el **CRLF**: si Windows convirtió los finales de línea, el build
-funciona en tu equipo pero revienta en el runner de Linux.
+Los dos fallos más habituales:
+
+- **CRLF** — si Windows convirtió los finales de línea, el build funciona en tu equipo y
+  revienta en el runner de Linux.
+- **Cambios en el Dockerfile sin repasar hadolint** — al dividirlo en dos etapas, la
+  instrucción `SHELL` dejó de aplicarse a la segunda (no se hereda entre etapas) y el CI se
+  puso rojo. Si tocas el `Dockerfile`, vuelve a pasar hadolint.
+
+### Comprobar la salud del laboratorio
+
+Ambas imágenes traen `HEALTHCHECK`, así que Docker sabe si el lab está realmente sano:
+
+```bash
+docker ps                                    # la columna STATUS muestra (healthy)
+docker inspect ubuntu-lab --format '{{.State.Health.Status}}'
+```
+
+El de terminal comprueba que systemd responde; el del escritorio, además, que noVNC sirve el
+cliente web — así un GNOME que no arranca no queda marcado como sano con la pantalla en
+negro. Se acepta el estado `degraded` a propósito: en un lab para romper cosas, un servicio
+caído adrede no debe marcar el contenedor como enfermo.
 
 ---
 
