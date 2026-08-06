@@ -1,0 +1,211 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Permisos mínimos por defecto; el job que publica los amplía.
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ultimate-linux-lab
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Verificaciones rápidas (~1 min). Si algo falla aquí, no gastamos 15 minutos
+  # construyendo una imagen que ya sabemos que está mal.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint y validación
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Buenas prácticas del Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          # DL3008: no fijamos versiones de apt a propósito. Es un lab de
+          # aprendizaje que debe traer los paquetes actuales de Ubuntu 24.04.
+          ignore: DL3008
+
+      - name: Scripts del escritorio
+        run: shellcheck desktop/prepare-vnc-home desktop/xstartup
+
+      - name: Sintaxis del compose
+        run: docker compose config -q
+
+      - name: Estructura de las units de systemd
+        # No se usa `systemd-analyze verify`: fallaría porque los ExecStart
+        # apuntan a binarios que solo existen dentro de la imagen. La comprobación
+        # real la hace el smoke test con systemctl dentro del contenedor.
+        run: |
+          for unit in desktop/vncserver.service desktop/novnc.service; do
+            for section in '\[Unit\]' '\[Service\]' '\[Install\]'; do
+              grep -q "^$section" "$unit" \
+                || { echo "::error file=$unit::falta la sección $section"; exit 1; }
+            done
+            echo "OK  $unit"
+          done
+
+      - name: Finales de línea LF
+        # Protege .gitattributes: con CRLF el Dockerfile rompe el build en Linux.
+        # Es la regresión más silenciosa de este proyecto.
+        run: |
+          if git ls-files --eol | grep -E 'w/crlf'; then
+            echo "::error::hay archivos con CRLF en el índice; revisa .gitattributes"
+            exit 1
+          fi
+          echo "OK  todos los archivos usan LF"
+
+  # ---------------------------------------------------------------------------
+  # Construye la imagen de verdad y levanta el lab. Durante el desarrollo el
+  # build se rompió tres veces por causas que solo aparecen al construir
+  # (paquetes sin candidato, binarios en otro paquete, /run/user/1000 ausente):
+  # ninguna la detecta una revisión visual del Dockerfile.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build y smoke test
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Liberar espacio en el runner
+        # La imagen pesa ~2,7 GB y el runner ronda los 14 GB libres.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Construir la imagen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ultimate-linux-lab:24.04
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Levantar el laboratorio
+        run: docker compose up -d
+
+      - name: Esperar a que systemd termine de arrancar
+        run: |
+          for i in $(seq 1 30); do
+            estado=$(docker exec ubuntu-lab systemctl is-system-running 2>/dev/null || true)
+            echo "intento $i: $estado"
+            case "$estado" in
+              running|degraded) exit 0 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::systemd no llegó a estado running"
+          exit 1
+
+      - name: Verificar el sistema base
+        run: |
+          echo "--- usuario nico ---"
+          docker exec ubuntu-lab id nico | tee /dev/stderr | grep -q 'uid=1000' \
+            || { echo "::error::nico no tiene uid 1000"; exit 1; }
+          docker exec ubuntu-lab id nico | grep -q 'sudo' \
+            || { echo "::error::nico no está en el grupo sudo"; exit 1; }
+
+          echo "--- man (protege el arreglo de man.REAL) ---"
+          docker exec -u nico ubuntu-lab man ls | head -1 | grep -qi 'LS' \
+            || { echo "::error::man no funciona"; exit 1; }
+
+          echo "--- servicios del curso ---"
+          for s in cron rsyslog; do
+            estado=$(docker exec ubuntu-lab systemctl is-active "$s")
+            echo "$s: $estado"
+            [ "$estado" = active ] || { echo "::error::$s no está activo"; exit 1; }
+          done
+
+      - name: Verificar el escritorio
+        run: |
+          echo "--- GNOME tarda en arrancar; damos margen ---"
+          for i in $(seq 1 24); do
+            estado=$(docker exec ubuntu-lab systemctl is-active vncserver 2>/dev/null || true)
+            echo "intento $i: vncserver=$estado"
+            [ "$estado" = active ] && break
+            sleep 5
+          done
+          [ "$(docker exec ubuntu-lab systemctl is-active vncserver)" = active ] \
+            || { echo "::error::vncserver no arrancó"; exit 1; }
+          [ "$(docker exec ubuntu-lab systemctl is-active novnc)" = active ] \
+            || { echo "::error::novnc no arrancó"; exit 1; }
+
+          echo "--- noVNC responde en el 6080 ---"
+          curl -fsS -o /dev/null http://localhost:6080/vnc.html \
+            || { echo "::error::noVNC no responde"; exit 1; }
+
+          echo "--- gnome-shell corriendo ---"
+          docker exec ubuntu-lab pgrep -c gnome-shell \
+            || { echo "::error::gnome-shell no está corriendo"; exit 1; }
+
+      - name: Diagnóstico (solo si algo falló)
+        if: failure()
+        run: |
+          docker compose ps || true
+          docker compose logs --tail 100 || true
+          docker exec ubuntu-lab journalctl -u vncserver -n 60 --no-pager || true
+          docker exec ubuntu-lab systemctl --failed || true
+
+      - name: Apagar el laboratorio
+        if: always()
+        run: docker compose down -v || true
+
+  # ---------------------------------------------------------------------------
+  # Publica la imagen para que instalar el lab sea un `docker pull` de ~2 min
+  # en vez de un build de 15. Solo en main: los PR no publican.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publicar en GHCR
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Liberar espacio en el runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Autenticarse en GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadatos y tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=24.04
+            type=sha,prefix=sha-,format=short
+
+      - name: Construir y publicar
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Reutiliza la caché que dejó el job `build`: no reconstruye desde cero.
+          cache-from: type=gha
