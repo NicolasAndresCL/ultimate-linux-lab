@@ -7,16 +7,30 @@ Todos se ejecutan desde `c:\dev\learning\hola_mundo\ultimate-linux` (PowerShell 
 
 ## 0. Arranque rápido (lo único que necesitas el día 1)
 
+Hay **dos laboratorios** sobre la misma base. Empieza por el de terminal: construye en 2-3
+minutos en vez de 15 y cubre casi todo el temario.
+
 ```bash
-docker compose up -d --build          # construye la imagen y levanta el lab
+docker compose --profile cli up -d --build     # solo terminal (539 MB)
+docker exec -it -u nico ubuntu-lab-cli bash
+```
+
+Cuando la clase sea de entorno gráfico:
+
+```bash
+docker compose up -d --build                   # con escritorio GNOME (2,67 GB)
 ```
 
 **Escritorio gráfico** → abre <http://localhost:6080/vnc.html> y pulsa *Connect*.
 GNOME tarda ~40 segundos en cargar tras el arranque.
 
-**Terminal** → `docker exec -it -u nico ubuntu-lab bash`
+**Terminal del lab con escritorio** → `docker exec -it -u nico ubuntu-lab bash`
 
 Contraseña de `nico` y de `root`: **`linux`** (la misma para el escritorio, VNC y `sudo`).
+Para usar otra: `docker compose build --build-arg LAB_PASSWORD='la-que-quieras'`.
+
+> Los dos labs **comparten el volumen `/home`**, así que tu trabajo está en ambos.
+> No hace falta levantarlos a la vez; de hecho, es mejor no hacerlo.
 
 ---
 
@@ -36,9 +50,23 @@ Contraseña de `nico` y de `root`: **`linux`** (la misma para el escritorio, VNC
 > **Regla de oro del día a día**: usa `stop` / `start`.
 > `down` solo cuando quieras un sistema limpio de fábrica.
 
+Para el lab de terminal, antepón siempre `--profile cli`:
+
+```bash
+docker compose --profile cli up -d      # levantar
+docker compose --profile cli stop       # apagar
+docker compose --profile cli ps         # ver ambos servicios
+```
+
+Sin `--profile cli`, `docker compose` ignora por completo el servicio `lab-cli` — no falla,
+simplemente actúa como si no existiera.
+
 ---
 
 ## 2. Entrar al laboratorio
+
+> Los ejemplos usan `ubuntu-lab` (el lab con escritorio). Para el de terminal, sustituye ese
+> nombre por **`ubuntu-lab-cli`** en todos los comandos de esta chuleta.
 
 ```bash
 # Como usuario normal — así es como debes trabajar el 95% del tiempo
@@ -163,15 +191,15 @@ Esto es exactamente lo que faltó con la máquina virtual. **Antes de una clase
 arriesgada**, congela el estado completo del sistema:
 
 ```bash
-# Crear el snapshot
+# Crear el snapshot (usa ubuntu-lab-cli si trabajas en el lab de terminal)
 docker commit ubuntu-lab ultimate-linux-lab:antes-de-permisos
 
 # Ver los snapshots que tienes
 docker images ultimate-linux-lab
 ```
 
-**Volver a un snapshot**: edita `image:` en `compose.yaml` apuntando al tag del snapshot
-y comenta la sección `build:`, o lánzalo suelto:
+**Volver a un snapshot**: edita `image:` del servicio en `compose.yaml` apuntando al tag del
+snapshot y comenta su sección `build:`, o lánzalo suelto:
 
 ```bash
 docker run -d --name lab-restaurado --privileged --cgroup host \
@@ -184,7 +212,8 @@ docker run -d --name lab-restaurado --privileged --cgroup host \
 
 > Los puertos van desplazados (`6081`, `5902`) para no chocar con el lab principal si
 > ambos están levantados. El escritorio del snapshot estaría en
-> <http://localhost:6081/vnc.html>.
+> <http://localhost:6081/vnc.html>. Si el snapshot es del lab de terminal, quita las dos
+> líneas `-p` y `--shm-size`: no le hacen falta.
 > **`--shm-size 1gb` no es opcional**: sin él, GNOME arranca con la pantalla en negro.
 
 Cada snapshot ocupa solo la diferencia respecto de la imagen base — cuestan casi nada,
@@ -263,8 +292,33 @@ sintaxis: **construye la imagen y levanta el lab** para comprobar que funciona d
 | Job | Qué hace | Duración |
 |---|---|---|
 | `lint` | hadolint del Dockerfile, shellcheck de `desktop/`, valida el compose y las units, comprueba que no haya CRLF | ~1 min |
-| `build` | Construye la imagen y levanta el lab: systemd, `man`, usuario `nico`, `cron`, el escritorio y noVNC en el 6080 | ~15 min |
-| `publish` | Sube la imagen a GHCR (solo en `main`) | ~3 min |
+| `build` (×2) | Construye **cada target** y levanta el lab: systemd, `man`, usuario `nico`, `cron` y —solo en `desktop`— el escritorio y noVNC en el 6080 | 3 y 15 min |
+| `scan` (×2) | **Trivy** sobre ambas imágenes; el informe va a la pestaña *Security* | ~5 min |
+| `publish` (×2) | Sube ambas variantes a GHCR (solo en `main`) | ~3 min |
+
+Los jobs corren en **matriz** sobre los dos targets (`base` y `desktop`), con cachés
+separadas por `scope` para que no se pisen.
+
+### El escaneo de vulnerabilidades
+
+Publicar en un registro público sin saber qué CVEs llevas dentro es el hueco obvio, así que
+el CI escanea las dos imágenes antes de subirlas:
+
+- **El informe completo** (CRITICAL, HIGH y MEDIUM) se sube como SARIF y aparece en
+  *Security → Code scanning* del repositorio.
+- **El build solo se rompe** si hay un CVE `CRITICAL` **que ya tiene parche disponible**
+  (`ignore-unfixed`). Una base Ubuntu siempre arrastra CVEs sin arreglo aguas arriba; fallar
+  por ellos convertiría el CI en ruido que se acaba ignorando.
+
+Para escanear en local, igual que el CI:
+
+```bash
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+  aquasec/trivy image --severity CRITICAL,HIGH ultimate-linux-lab:24.04-cli
+```
+
+Es material directo para los módulos de seguridad del curso: mira qué paquetes arrastran los
+CVEs y compara la superficie del lab de terminal con la del escritorio.
 
 ### Seguirlo desde la terminal
 
@@ -280,10 +334,15 @@ gh workflow run ci.yml       # lanzarlo a mano
 Evita los 15 minutos de build en cualquier equipo:
 
 ```bash
-docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:latest
+docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:cli       # terminal, 539 MB
+docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:latest    # escritorio, 2,67 GB
 ```
 
-Tags disponibles: `latest`, `24.04` y `sha-<commit>` para volver a una versión concreta.
+| Tag | Contenido |
+|---|---|
+| `latest`, `24.04` | Lab completo con escritorio GNOME |
+| `cli`, `24.04-cli` | Lab de terminal |
+| `sha-<commit>`, `sha-<commit>-cli` | Versión concreta, para volver atrás |
 
 ### Si el CI falla y en tu máquina funciona
 

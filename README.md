@@ -22,29 +22,40 @@ rompe, se destruye y se recrea en segundos sin perder el trabajo guardado.
 - Unidad `C:` compartida en *Settings → Resources → File sharing*
 - **4 GB de RAM** asignados a Docker como mínimo (GNOME es exigente) y **~3 GB de disco**
 
+## Dos laboratorios, un Dockerfile
+
+| | `lab-cli` | `lab` (por defecto) |
+|---|---|---|
+| Contenido | Sistema + systemd + toolkit | Lo anterior **+ escritorio GNOME** |
+| Tamaño | **539 MB** | 2,67 GB |
+| Construcción | **2-3 min** | 10-15 min |
+| Cubre | Ficheros, permisos, usuarios, procesos, systemd, cron, redes, scripting | Todo lo anterior + seguir los clics del instructor |
+
+Empieza por el de terminal: cubre casi todo el temario y se recrea en un suspiro. Levanta el
+escritorio solo cuando la clase sea de entorno gráfico.
+
 ## Arranque rápido
 
 ```bash
 git clone https://github.com/NicolasAndresCL/ultimate-linux-lab.git
 cd ultimate-linux-lab
-docker compose up -d --build
-```
 
-> La primera construcción tarda **10-15 minutos**: descarga el escritorio GNOME completo.
-> Las siguientes son casi instantáneas gracias a la caché de capas de Docker.
-> Si prefieres no esperar, usa la imagen ya construida (abajo).
+docker compose --profile cli up -d --build    # solo terminal, 2-3 min
+docker compose up -d --build                  # con escritorio, 10-15 min
+```
 
 ### Usar la imagen ya construida
 
-El CI publica la imagen en GitHub Container Registry en cada cambio de `main`, así que puedes
-saltarte el build y bajarla directamente (~2 minutos):
+El CI publica ambas variantes en GitHub Container Registry en cada cambio de `main`, así que
+puedes saltarte el build:
 
 ```bash
-docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:latest
+docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:cli       # terminal
+docker pull ghcr.io/nicolasandrescl/ultimate-linux-lab:latest    # con escritorio
 ```
 
-Para que `docker compose` la use en vez de construirla, comenta el bloque `build:` de
-[compose.yaml](compose.yaml) y apunta `image:` a esa ruta.
+Para que `docker compose` las use en vez de construirlas, comenta el bloque `build:` del
+servicio en [compose.yaml](compose.yaml).
 
 ### Escritorio gráfico
 
@@ -54,21 +65,45 @@ Tarda unos 40 segundos en cargar GNOME la primera vez.
 ### Terminal
 
 ```bash
-docker exec -it -u nico ubuntu-lab bash
+docker exec -it -u nico ubuntu-lab bash        # lab con escritorio
+docker exec -it -u nico ubuntu-lab-cli bash    # lab de terminal
 ```
 
-**Credenciales** — usuario `nico`, contraseña `linux`, tanto en el escritorio como en la
-terminal y en VNC. `root` usa la misma.
+Para salir: `exit`. Para apagar el lab: `docker compose stop`.
 
-Para salir de la terminal: `exit`. Para apagar el lab: `docker compose stop`.
+## Credenciales y seguridad
+
+Usuario **`nico`**, contraseña **`linux`** — la misma en el escritorio, la terminal, VNC y
+`sudo`. `root` usa esa contraseña también.
+
+> ⚠️ **Las imágenes publicadas en GHCR son públicas, así que esa contraseña es de
+> conocimiento público.** Lo que hace que no importe es que los puertos se publican **solo en
+> `127.0.0.1`**: el laboratorio no es accesible desde tu red ni desde Internet.
+
+Para construir con otra contraseña:
+
+```bash
+docker compose build --build-arg LAB_PASSWORD='la-que-quieras'
+```
+
+> El valor pasado por `--build-arg` queda registrado en `docker history` de la imagen
+> resultante. Sirve para no dejar el valor por defecto, pero **no es un mecanismo de
+> secretos**: no uses ahí una contraseña que reutilices en otro sitio. Para cambiarla sin
+> dejar rastro, hazlo dentro del contenedor con `passwd`.
+
+**El contenedor corre en modo `privileged`**, que systemd necesita para gestionar cgroups y
+montajes del kernel. Equivale en la práctica a root en el host, y es un trade-off asumido a
+conciencia: el lab es desechable, sus puertos van solo a loopback y corre en tu propia
+máquina. No reutilices esa configuración en servicios expuestos a Internet. El razonamiento
+completo está en el propio [compose.yaml](compose.yaml).
 
 ## Estructura
 
 ```
 ultimate-linux/
-├── .github/workflows/ci.yml   # CI: lint, build, smoke test y publicación en GHCR
-├── Dockerfile        # imagen: Ubuntu 24.04 + systemd + GNOME + toolkit
-├── compose.yaml      # servicio ubuntu-lab: privileged, cgroups, puertos, volúmenes
+├── .github/workflows/ci.yml   # CI: lint, build+smoke test, escaneo de CVEs y publicación
+├── Dockerfile        # dos etapas: `base` (terminal) y `desktop` (+ GNOME)
+├── compose.yaml      # servicios lab y lab-cli: privileged, cgroups, puertos, volúmenes
 ├── desktop/          # configuración del escritorio (VNC, noVNC, sesión GNOME)
 ├── workspace/        # ← tus scripts y ejercicios, editables desde VS Code
 ├── pasos.md          # chuleta completa de comandos Docker
@@ -77,9 +112,11 @@ ultimate-linux/
 
 ## Integración continua
 
-Cada push verifica que el laboratorio **construye y arranca de verdad**, no solo que el
-`Dockerfile` esté bien escrito: levanta el contenedor y comprueba systemd, `man`, el usuario
-`nico` y que el escritorio responde en el puerto 6080. Detalles en [pasos.md](pasos.md).
+Cada push verifica que **ambos laboratorios construyen y arrancan de verdad**, no solo que el
+`Dockerfile` esté bien escrito: levanta los contenedores y comprueba systemd, `man`, el
+usuario `nico` y que el escritorio responde en el 6080. Además **escanea las imágenes con
+Trivy** antes de publicarlas, y el informe de vulnerabilidades queda en la pestaña *Security*
+del repositorio. Detalles en [pasos.md](pasos.md).
 
 ## Puertos
 
