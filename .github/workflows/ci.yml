@@ -28,9 +28,14 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
-          # DL3008: no fijamos versiones de apt a propósito. Es un lab de
-          # aprendizaje que debe traer los paquetes actuales de Ubuntu 24.04.
-          ignore: DL3008
+          # Reglas ignoradas a propósito, no por comodidad:
+          #   DL3008 — no se fijan versiones de apt: el lab debe traer los
+          #            paquetes actuales de Ubuntu 24.04.
+          #   DL3064 — la contraseña `linux` es intencional y pública; es un
+          #            laboratorio local desechable, está documentada en el README.
+          #   DL3059 — los RUN van separados a propósito, para que Docker cachee
+          #            por etapas y un cambio en GNOME no invalide el sistema base.
+          ignore: DL3008,DL3064,DL3059
 
       - name: Scripts del escritorio
         run: shellcheck desktop/prepare-vnc-home desktop/xstartup

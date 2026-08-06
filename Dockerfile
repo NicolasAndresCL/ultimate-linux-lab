@@ -10,6 +10,10 @@ ENV container=docker
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/Santiago
 
+# Con el `sh` por defecto, un fallo a la izquierda de un pipe pasa desapercibido
+# y la capa se da por buena. `pipefail` hace que el RUN falle de verdad.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # -----------------------------------------------------------------------------
 # Restaurar las páginas de manual.
 # La imagen oficial de Ubuntu viene "minimizada": /etc/dpkg/dpkg.cfg.d/excludes
